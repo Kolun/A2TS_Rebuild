@@ -132,6 +132,10 @@ PLUGINS_EXPORTDLL void ts3plugin_onAvatarUpdated(uint64 serverConnectionHandlerI
 PLUGINS_EXPORTDLL void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenuType type, int menuItemID, uint64 selectedItemID);
 PLUGINS_EXPORTDLL void ts3plugin_onHotkeyEvent(const char* keyword);
 PLUGINS_EXPORTDLL void ts3plugin_onHotkeyRecordedEvent(const char* keyword, const char* key);
+
+/* Custom functions	*/
+void ts3plugin_receiveCommand(void* pArguments);
+void ts3plugin_sendCommand(void* pArguments);
 #ifdef __cplusplus
 }
 #endif

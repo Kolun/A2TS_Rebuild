@@ -42,6 +42,8 @@ local.properties
 *.sln.docstates
 
 # Build results
+x64/
+src/x64
 [Dd]ebug/
 [Rr]elease/
 *_i.c

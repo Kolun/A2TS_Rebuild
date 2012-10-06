@@ -14,6 +14,9 @@
 #include "public_rare_definitions.h"
 #include "ts3_functions.h"
 #include "ts3plugin.h"
+#include <queue>
+#include <list>
+#include <string>
 
 static struct TS3Functions ts3Functions;
 
@@ -32,14 +35,23 @@ static struct TS3Functions ts3Functions;
 #define SERVERINFO_BUFSIZE 256
 #define CHANNELINFO_BUFSIZE 512
 #define RETURNCODE_BUFSIZE 128
+#define SERVER_NAME         L"."
+#define PIPE_NAME           L"a2ts"
+#define FULL_PIPE_NAME      L"\\\\" SERVER_NAME L"\\pipe\\" PIPE_NAME
+#define BUFFER_SIZE     512
+
 
 static char* pluginID = NULL;
-SOCKET receivingSocket;
 uint64 connectionHandlerID;
-uintptr_t threadPtr = NULL;
+HANDLE clientPipe = INVALID_HANDLE_VALUE;
+HANDLE receiverThreadHndl;
+DWORD dwError = ERROR_SUCCESS;
+HANDLE senderThreadHndl;
+BOOL stopRequested = FALSE;
 
-void ts3plugin_udpListen(void *pParams);
-
+//std::queue<wchar_t[512]> incomingMessages;
+//std::queue<wchar_t[512]> outgoingMessages;
+std::queue<wchar_t> outgoingMessages;
 /*********************************** Required functions START ************************************/
 /*
  * If any of these required functions is not implemented, TS3 will refuse to load the plugin
@@ -88,83 +100,15 @@ int ts3plugin_init()
 		return 1;
 	}
 
-	/*	Winsock init	*/
-	WORD wVersionRequested = MAKEWORD(2,2);
-	WSADATA wsaData;
-
-	// Attempt to start-up WSA
-	if (WSAStartup(wVersionRequested, &wsaData) != 0)
-	{
-	    printf("PLUGIN: WSAStartup failed.\n");
-		printf("PLUGIN: Error code: %s\n",WSAStartup);	
-		return 1;
-	}
-	else
-	{
-	    printf("PLUGIN: Winsock launch OK!.\n");
-		printf("PLUGIN: Status: %s.\n", wsaData.szSystemStatus);
-	}
-		
-	// Confirm winsock version.
-	if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2 )
-	{
-		/* Tell the user that we could not find a usable WinSock DLL.*/
-		printf("PLUGIN: Unsupported dll version. Version: %u.%u!\n", LOBYTE(wsaData.wVersion), HIBYTE(wsaData.wVersion));
-		WSACleanup();
-		return 1;
-	}
-	else
-	{
-       printf("PLUGIN: dll version %u.%u!\n", LOBYTE(wsaData.wVersion), HIBYTE(wsaData.wVersion));
-	}
-
-	// Create a socket for UDP.
-	receivingSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP); 
-
-	// Check for errors to ensure that the socket is a valid socket.
-	if (receivingSocket == INVALID_SOCKET)
-	{
-		printf("PLUGIN: Error at socket(): %ld\n", WSAGetLastError());
-		return 1;
-	}
-	else
-	{
-		printf("PLUGIN: socket() is OK!\n"); 
-	}
-
-	// Create a sockaddr_in object and set its values.
-	sockaddr_in endPoint;
-
-	endPoint.sin_family = AF_INET;
-	endPoint.sin_addr.s_addr = inet_addr("127.0.0.1");
-	endPoint.sin_port = htons(55555);
-
-	// Bind the socket to the endpoint
-	if (bind(receivingSocket, (SOCKADDR*)&endPoint, sizeof(endPoint)) == SOCKET_ERROR)
-	{
-		printf("PLUGIN: bind() failed: %ld.\n", WSAGetLastError());
-		closesocket(receivingSocket);
-		return 1;
-	}
-	else
-	{
-		printf("PLUGIN: bind() is OK!\n");
-	}
-
-	/*	 Winsock init end */
-
     return 0;  /* 0 = success, 1 = failure */
 }
 
 /* Custom code called right before the plugin is unloaded */
 void ts3plugin_shutdown()
 {
-    /* Your plugin cleanup code here */
-    printf("PLUGIN: Shutting down..\n");
-
-	closesocket(receivingSocket);
-	WSACleanup();
-
+	printf("PLUGIN: Shutdown.\n");   
+	// Request thread stop.
+	stopRequested = TRUE;
 	/* Free pluginID if we registered it */
 	if(pluginID) {
 		free(pluginID);
@@ -174,51 +118,139 @@ void ts3plugin_shutdown()
 
 /*********************************** Required functions END ************************************/
 
-void ts3plugin_onConnectStatusChangeEvent(uint64 connectionHandlerID, int STATUS_CONNECTION_ESTABLISHED,unsigned int ERROR_ok)
+void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int newStatus, unsigned int errorNumber)
 {
-	printf("PLUGIN: TS3 is connected to a server.\n");
-
-	//FIXME This function is called everytime the connection status changes. Any ideas why?
-
-	if(threadPtr == NULL)
+	printf("PLUGIN: newStatus is %d\n",newStatus);
+	if(newStatus == STATUS_CONNECTION_ESTABLISHED)
 	{
-		threadPtr = _beginthread(ts3plugin_udpListen, 0, NULL);
-		printf("PLUGIN: Creating listener thread. \n");
-	}
-	
-}
+		// Check if threads are started.
+		// If not - start.
+		printf("PLUGIN: Connected to server.\n");
 
-void ts3plugin_udpListen(void *pParams)
-{
-	printf("PLUGIN: Listener thread started.\n");
-
-	// Prepare to receive data.
-	char recvbuf[256] = "";
-	int bytesRecv = SOCKET_ERROR;
-	bool stopRequested = false;
-
-	while(!stopRequested)
-	{
-		printf("PLUGIN: Receiving data.\n");
-		bytesRecv = recv(receivingSocket, recvbuf, 256, 0);
-
-		if (bytesRecv == SOCKET_ERROR)
+		if(receiverThreadHndl == NULL)
 		{
-			printf("PLUGIN: recv() error %ld.\n", WSAGetLastError());
+			printf("PLUGIN: Receiver handle is unassigned.Assigning..\n");
+			receiverThreadHndl = (HANDLE)_beginthread(ts3plugin_receiveCommand, 0, NULL);
 		}
 		else
 		{
-			printf("PLUGIN: recv() is OK.\n");
-			printf("PLUGIN: Received data is: %s", recvbuf);
-			printf("PLUGIN: Bytes received: %ld.\n", bytesRecv);
-
-			if(strcmp(recvbuf,"stop") == 0)
+			printf("PLUGIN: Receiver handle already assigned. \n");
+			if(GetThreadId(receiverThreadHndl) != NULL)
 			{
-				printf("PLUGIN: Stopping receiving.\n");
-				stopRequested = true;
+				printf("PLUGIN: Thread id: %d\n", GetThreadId(receiverThreadHndl));
 			}
+		}
+		
 
-			memset(&recvbuf[0],0,sizeof(recvbuf));
+		if(senderThreadHndl == NULL)
+		{
+			printf("PLUGIN: Sender handle is unassigned.Assigning..\n");
+			senderThreadHndl = (HANDLE)_beginthread(ts3plugin_sendCommand, 0 , NULL);
+		}
+		else
+		{
+			printf("PLUGIN: Sender handle already assigned. \n");
+			if(GetThreadId(senderThreadHndl) != NULL)
+			{
+				printf("PLUGIN: Thread id: %d\n", GetThreadId(senderThreadHndl));
+			}
 		}
 	}
 }
+
+// IPC Implementation
+void ts3plugin_receiveCommand(void* pArguments)
+{
+    // Try to open the named pipe identified by the pipe name.
+	while (clientPipe == INVALID_HANDLE_VALUE || stopRequested) 
+    {
+        clientPipe = CreateFile( 
+            FULL_PIPE_NAME,                 // Pipe name 
+            GENERIC_READ | GENERIC_WRITE,   // Read and write access
+            0,                              // No sharing 
+            NULL,                           // Default security attributes
+            OPEN_EXISTING,                  // Opens existing pipe
+            0,                              // Default attributes
+            NULL                            // No template file
+            );
+
+		Sleep(500);
+    }
+
+	printf("PLUGIN: Connected to a server pipe.\n");
+
+    // Set the read mode and the blocking mode of the named pipe.
+    DWORD dwMode = PIPE_READMODE_MESSAGE;
+    if (!SetNamedPipeHandleState(clientPipe, &dwMode, NULL, NULL))
+    {
+        dwError = GetLastError();
+        printf("PLUGIN: SetNamedPipeHandleState failed w/err 0x%08lx\n", dwError);
+    }
+
+	BOOL fFinishRead = FALSE;
+	wchar_t chResponse[BUFFER_SIZE];
+    DWORD cbResponse, cbRead;
+    cbResponse = sizeof(chResponse) -1;
+
+	while(!stopRequested)
+	{
+        fFinishRead = ReadFile(
+            clientPipe,             // Handle of the pipe
+            chResponse,             // Buffer to receive the reply
+            cbResponse,             // Size of buffer in bytes
+            &cbRead,                // Number of bytes read 
+            NULL                    // Not overlapped 
+            );
+
+        if (fFinishRead)
+        {
+			chResponse[cbRead/2 +1] = '\0';
+			printf("PLUGIN: Received %d bytes from server.\n",cbRead);
+			wprintf(L"PLUGIN: Received message: \"%s\"\n",chResponse);
+			//FIXME Place value of chResponse to incomingMessages queue.	
+		}
+		else
+		{
+			printf("PLUGIN: Read failed. Error code: %d\n",GetLastError());
+		}
+    }
+}
+
+void ts3plugin_sendCommand(void* pArguments)
+{
+	while(clientPipe == INVALID_HANDLE_VALUE || !stopRequested)
+	{
+		Sleep(500);
+	}
+
+	printf("PLUGIN: Connected to a server pipe.\n");
+
+	while(!stopRequested)
+	{
+		if(!outgoingMessages.empty())
+		{
+			wchar_t chRequest[] = L"Hello";
+			// FIXME Replace hardcode to outgoingMessages.Front();
+			DWORD cbRequest, cbWritten;
+			cbRequest = sizeof(chRequest);
+			outgoingMessages.pop();
+
+			if (!WriteFile(
+				clientPipe,                 // Handle of the pipe
+				chRequest,                  // Message to be written
+				cbRequest,                  // Number of bytes to write
+				&cbWritten,                 // Number of bytes written
+				NULL                        // Not overlapped
+				))
+			{
+				dwError = GetLastError();
+				wprintf(L"WriteFile to pipe failed w/err 0x%08lx\n", dwError);
+			}
+		}
+		else
+		{
+			Sleep(100);
+		}
+	}
+}
+
