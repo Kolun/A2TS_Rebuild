@@ -15,7 +15,6 @@
 #include "ts3_functions.h"
 #include "ts3plugin.h"
 #include <queue>
-#include <list>
 #include <string>
 
 static struct TS3Functions ts3Functions;
@@ -49,9 +48,8 @@ DWORD dwError = ERROR_SUCCESS;
 HANDLE senderThreadHndl;
 BOOL stopRequested = FALSE;
 
-//std::queue<wchar_t[512]> incomingMessages;
-//std::queue<wchar_t[512]> outgoingMessages;
-std::queue<wchar_t> outgoingMessages;
+std::queue<std::wstring> incomingMessages;
+std::queue<std::wstring> outgoingMessages;
 /*********************************** Required functions START ************************************/
 /*
  * If any of these required functions is not implemented, TS3 will refuse to load the plugin
@@ -204,13 +202,16 @@ void ts3plugin_receiveCommand(void* pArguments)
 
         if (fFinishRead)
         {
-			chResponse[cbRead/2 +1] = '\0';
+			chResponse[cbRead/2] = '\0';
 			printf("PLUGIN: Received %d bytes from server.\n",cbRead);
 			wprintf(L"PLUGIN: Received message: \"%s\"\n",chResponse);
-			//FIXME Place value of chResponse to incomingMessages queue.	
+			incomingMessages.push(chResponse);
+			printf("PLUGIN: Size of incoming messages queue: %d", incomingMessages.size());
+			wprintf(L"PLUGIN: Message queue: \"%s\"\n",incomingMessages.front());
 		}
 		else
 		{
+			// FIXME Add code to reconnect to named pipe if it is broken (For ex: if ArmA2 crashes)
 			printf("PLUGIN: Read failed. Error code: %d\n",GetLastError());
 		}
     }
@@ -229,18 +230,16 @@ void ts3plugin_sendCommand(void* pArguments)
 	{
 		if(!outgoingMessages.empty())
 		{
-			wchar_t chRequest[] = L"Hello";
-			// FIXME Replace hardcode to outgoingMessages.Front();
-			DWORD cbRequest, cbWritten;
-			cbRequest = sizeof(chRequest);
+			const wchar_t* chRequest = outgoingMessages.front().c_str();
+			DWORD cbWritten;
 			outgoingMessages.pop();
 
 			if (!WriteFile(
-				clientPipe,                 // Handle of the pipe
-				chRequest,                  // Message to be written
-				cbRequest,                  // Number of bytes to write
-				&cbWritten,                 // Number of bytes written
-				NULL                        // Not overlapped
+				clientPipe,											// Handle of the pipe
+				chRequest,											// Message to be written
+				sizeof(chRequest),									// Number of bytes to write
+				&cbWritten,											// Number of bytes written
+				NULL												// Not overlapped
 				))
 			{
 				dwError = GetLastError();
