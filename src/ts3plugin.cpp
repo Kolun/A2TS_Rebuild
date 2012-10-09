@@ -189,6 +189,7 @@ void ts3plugin_receiveCommand(void* pArguments)
 	wchar_t chResponse[BUFFER_SIZE];
     DWORD cbResponse, cbRead;
     cbResponse = sizeof(chResponse) -1;
+	int errCode;
 
 	while(!stopRequested)
 	{
@@ -206,13 +207,20 @@ void ts3plugin_receiveCommand(void* pArguments)
 			printf("PLUGIN: Received %d bytes from server.\n",cbRead);
 			wprintf(L"PLUGIN: Received message: \"%s\"\n",chResponse);
 			incomingMessages.push(chResponse);
-			printf("PLUGIN: Size of incoming messages queue: %d", incomingMessages.size());
-			wprintf(L"PLUGIN: Message queue: \"%s\"\n",incomingMessages.front());
+			printf("PLUGIN: Size of incoming messages queue: %d\n", incomingMessages.size());
+			printf("PLUGIN: Message queue last message: \"%S\"\n",incomingMessages.front().c_str());
 		}
 		else
 		{
-			// FIXME Add code to reconnect to named pipe if it is broken (For ex: if ArmA2 crashes)
-			printf("PLUGIN: Read failed. Error code: %d\n",GetLastError());
+			errCode = GetLastError();
+			if(errCode == 109)
+			{
+				// Add code to reconnect to A2.
+			}
+			else
+			{
+				printf("PLUGIN: Read failed. Error code: %d\n",GetLastError());
+			}
 		}
     }
 }
