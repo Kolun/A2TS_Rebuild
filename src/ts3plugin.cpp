@@ -8,12 +8,13 @@
 #include <string.h>
 #include <assert.h>
 #include <process.h>
-#include "public_errors.h"
-#include "public_errors_rare.h"
-#include "public_definitions.h"
-#include "public_rare_definitions.h"
-#include "ts3_functions.h"
-#include "ts3plugin.h"
+#include "include/public_errors.h"
+#include "include/public_errors_rare.h"
+#include "include/public_definitions.h"
+#include "include/public_rare_definitions.h"
+#include "include/ts3_functions.h"
+#include "src/ts3plugin.h"
+#include "src/parser.h"
 #include <queue>
 #include <string>
 
@@ -133,10 +134,10 @@ void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int 
 		else
 		{
 			printf("PLUGIN: Receiver handle already assigned. \n");
-			if(GetThreadId(receiverThreadHndl) != NULL)
-			{
-				printf("PLUGIN: Thread id: %d\n", GetThreadId(receiverThreadHndl));
-			}
+      if(GetThreadId(receiverThreadHndl) != NULL)
+      {
+        printf("PLUGIN: Thread id: %d\n", GetThreadId(receiverThreadHndl));
+      }
 		}
 		
 
@@ -148,10 +149,10 @@ void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int 
 		else
 		{
 			printf("PLUGIN: Sender handle already assigned. \n");
-			if(GetThreadId(senderThreadHndl) != NULL)
-			{
-				printf("PLUGIN: Thread id: %d\n", GetThreadId(senderThreadHndl));
-			}
+      if(GetThreadId(senderThreadHndl) != NULL)
+      {
+        printf("PLUGIN: Thread id: %d\n", GetThreadId(senderThreadHndl));
+      }
 		}
 	}
 }
