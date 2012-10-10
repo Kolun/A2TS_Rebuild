@@ -10,17 +10,8 @@ HEADERS += \
     include/public_definitions.h \
     include/plugin_events.h \
     include/plugin_definitions.h \
-<<<<<<< HEAD
     include/clientlib_publicdefinitions.h
-
-SOURCES += \
-    src/ts3plugin.cpp
-=======
-    include/clientlib_publicdefinitions.h \
-    parser.h \
-    src/parser.h
 
 SOURCES += \
     src/ts3plugin.cpp \
     src/parser.cpp
->>>>>>> Kolun/master

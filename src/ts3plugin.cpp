@@ -8,15 +8,15 @@
 #include <string.h>
 #include <assert.h>
 #include <process.h>
-#include "include/public_errors.h"
-#include "include/public_errors_rare.h"
-#include "include/public_definitions.h"
-#include "include/public_rare_definitions.h"
-#include "include/ts3_functions.h"
-#include "src/ts3plugin.h"
-#include "src/parser.h"
 #include <queue>
 #include <string>
+#include "public_errors.h"
+#include "public_errors_rare.h"
+#include "public_definitions.h"
+#include "public_rare_definitions.h"
+#include "ts3_functions.h"
+#include "ts3plugin.h"
+#include "parser.h"
 
 static struct TS3Functions ts3Functions;
 
@@ -40,9 +40,9 @@ static struct TS3Functions ts3Functions;
 #define FULL_PIPE_NAME      L"\\\\" SERVER_NAME L"\\pipe\\" PIPE_NAME
 #define BUFFER_SIZE     512
 
-
 static char* pluginID = NULL;
 uint64 connectionHandlerID;
+anyID clientId;
 HANDLE clientPipe = INVALID_HANDLE_VALUE;
 HANDLE receiverThreadHndl;
 DWORD dwError = ERROR_SUCCESS;
@@ -105,9 +105,20 @@ int ts3plugin_init()
 /* Custom code called right before the plugin is unloaded */
 void ts3plugin_shutdown()
 {
-	printf("PLUGIN: Shutdown.\n");   
+	printf("PLUGIN: Shutdown called.\n");   
 	// Request thread stop.
 	stopRequested = TRUE;
+	// Cancel all awaiting IO request for the thread.
+	CancelSynchronousIo(receiverThreadHndl);
+
+	while(receiverThreadHndl != NULL)
+	{
+		printf("PLUGIN: Awaiting thread shutdown.\n");
+		Sleep(100);
+	}
+
+	printf("PLUGIN: Thread shutdown confirmed.\n");
+	
 	/* Free pluginID if we registered it */
 	if(pluginID) {
 		free(pluginID);
@@ -116,6 +127,13 @@ void ts3plugin_shutdown()
 }
 
 /*********************************** Required functions END ************************************/
+
+void ts3plugin_registerPluginID(const char* id) {
+	const size_t sz = strlen(id) + 1;
+	pluginID = (char*)malloc(sz * sizeof(char));
+	_strcpy(pluginID, sz, id);  /* The id buffer will invalidate after exiting this function */
+	printf("PLUGIN: registerPluginID: %s\n", pluginID);
+}
 
 void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int newStatus, unsigned int errorNumber)
 {
@@ -126,42 +144,52 @@ void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int 
 		// If not - start.
 		printf("PLUGIN: Connected to server.\n");
 
+		// Receive client id
+		if(ts3Functions.getClientID(connectionHandlerID, &clientId) != ERROR_ok)
+		{
+			printf("PLUGIN: Failed to receive client ID.\n"); 
+			// FIXME <--------------- Client ID must begin from 1.
+		}
+		else
+		{
+			printf("PLUGIN: Current client ID: %d\n", clientId);
+		}
+
 		if(receiverThreadHndl == NULL)
 		{
-			printf("PLUGIN: Receiver handle is unassigned.Assigning..\n");
+			printf("PLUGIN: Receiver handle is unassigned. Assigning..\n");
 			receiverThreadHndl = (HANDLE)_beginthread(ts3plugin_receiveCommand, 0, NULL);
 		}
 		else
 		{
 			printf("PLUGIN: Receiver handle already assigned. \n");
-      if(GetThreadId(receiverThreadHndl) != NULL)
-      {
-        printf("PLUGIN: Thread id: %d\n", GetThreadId(receiverThreadHndl));
-      }
+			if(GetThreadId(receiverThreadHndl) != NULL)
+			{
+				printf("PLUGIN: Thread id: %d\n", GetThreadId(receiverThreadHndl));
+			}
 		}
 		
-
-		if(senderThreadHndl == NULL)
+/*		if(senderThreadHndl == NULL)
 		{
-			printf("PLUGIN: Sender handle is unassigned.Assigning..\n");
+			printf("PLUGIN: Sender handle is unassigned. Assigning..\n");
 			senderThreadHndl = (HANDLE)_beginthread(ts3plugin_sendCommand, 0 , NULL);
 		}
 		else
 		{
 			printf("PLUGIN: Sender handle already assigned. \n");
-      if(GetThreadId(senderThreadHndl) != NULL)
-      {
-        printf("PLUGIN: Thread id: %d\n", GetThreadId(senderThreadHndl));
-      }
-		}
+			if(GetThreadId(senderThreadHndl) != NULL)
+			{
+				printf("PLUGIN: Thread id: %d\n", GetThreadId(senderThreadHndl));
+			}
+		}*/
 	}
 }
 
 // IPC Implementation
-void ts3plugin_receiveCommand(void* pArguments)
+void ts3plugin_pipeConnect()
 {
-    // Try to open the named pipe identified by the pipe name.
-	while (clientPipe == INVALID_HANDLE_VALUE || stopRequested) 
+	// Try to open the named pipe identified by the pipe name.
+	while (stopRequested != true) 
     {
         clientPipe = CreateFile( 
             FULL_PIPE_NAME,                 // Pipe name 
@@ -173,18 +201,29 @@ void ts3plugin_receiveCommand(void* pArguments)
             NULL                            // No template file
             );
 
-		Sleep(500);
+		if(clientPipe != INVALID_HANDLE_VALUE)
+		{
+			printf("PLUGIN: Connected to a server pipe.\n");
+			// Set the read mode and the blocking mode of the named pipe.
+			DWORD dwMode = PIPE_READMODE_MESSAGE;
+			if (!SetNamedPipeHandleState(clientPipe, &dwMode, NULL, NULL))
+			{
+				dwError = GetLastError();
+				printf("PLUGIN: SetNamedPipeHandleState failed w/err 0x%08lx\n", dwError);
+			}
+			break;
+		}
+		else
+		{
+			Sleep(500);
+		}
     }
+}
 
-	printf("PLUGIN: Connected to a server pipe.\n");
-
-    // Set the read mode and the blocking mode of the named pipe.
-    DWORD dwMode = PIPE_READMODE_MESSAGE;
-    if (!SetNamedPipeHandleState(clientPipe, &dwMode, NULL, NULL))
-    {
-        dwError = GetLastError();
-        printf("PLUGIN: SetNamedPipeHandleState failed w/err 0x%08lx\n", dwError);
-    }
+void ts3plugin_receiveCommand(void* pArguments)
+{
+	// Call pipe connection function.
+	ts3plugin_pipeConnect();
 
 	BOOL fFinishRead = FALSE;
 	wchar_t chResponse[BUFFER_SIZE];
@@ -192,7 +231,7 @@ void ts3plugin_receiveCommand(void* pArguments)
     cbResponse = sizeof(chResponse) -1;
 	int errCode;
 
-	while(!stopRequested)
+	while(stopRequested != true)
 	{
         fFinishRead = ReadFile(
             clientPipe,             // Handle of the pipe
@@ -216,7 +255,7 @@ void ts3plugin_receiveCommand(void* pArguments)
 			errCode = GetLastError();
 			if(errCode == 109)
 			{
-				// Add code to reconnect to A2.
+				ts3plugin_pipeConnect();
 			}
 			else
 			{
@@ -224,11 +263,13 @@ void ts3plugin_receiveCommand(void* pArguments)
 			}
 		}
     }
+
+	receiverThreadHndl = NULL;
 }
 
-void ts3plugin_sendCommand(void* pArguments)
+void ts3plugin_sendCommand(void* pArguments) // FIXME Currently disabled.
 {
-	while(clientPipe == INVALID_HANDLE_VALUE || !stopRequested)
+	while(clientPipe == INVALID_HANDLE_VALUE || stopRequested)
 	{
 		Sleep(500);
 	}
@@ -260,5 +301,22 @@ void ts3plugin_sendCommand(void* pArguments)
 			Sleep(100);
 		}
 	}
+
+	senderThreadHndl = INVALID_HANDLE_VALUE;
 }
 
+// Main loop implementation
+void ts3plugin_pos()
+{
+	while(stopRequested)
+	{
+		if(incomingMessages.size() != 0)
+		{
+			// Check if there are incoming messages in the queue.
+			// If they are - parse them.
+			// FIXME Add code which would get the arguments from the parser.
+
+
+		}
+	}
+}
