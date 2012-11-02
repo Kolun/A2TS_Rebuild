@@ -48,6 +48,10 @@ HANDLE receiverThreadHndl;
 DWORD dwError = ERROR_SUCCESS;
 HANDLE senderThreadHndl;
 BOOL stopRequested = FALSE;
+BOOL inRt = 0;
+char *chname[] = {"PvP_WOG","RT",""};
+uint64 newcid = 0;
+uint64 oldcid = 0;
 
 std::queue<std::wstring> incomingMessages;
 std::queue<std::wstring> outgoingMessages;
@@ -276,7 +280,7 @@ void ts3plugin_sendCommand(void* pArguments) // FIXME Currently disabled.
 
 	printf("PLUGIN: Connected to a server pipe.\n");
 
-	while(!stopRequested)
+	while(stopRequested != true)
 	{
 		if(!outgoingMessages.empty())
 		{
@@ -308,7 +312,7 @@ void ts3plugin_sendCommand(void* pArguments) // FIXME Currently disabled.
 // Main loop implementation
 void ts3plugin_pos()
 {
-	while(stopRequested)
+	while(stopRequested != true)
 	{
 		if(incomingMessages.size() != 0)
 		{
@@ -316,7 +320,66 @@ void ts3plugin_pos()
 			// If they are - parse them.
 			// FIXME Add code which would get the arguments from the parser.
 
+			if(inRt == 0)
+			{
+				
+			}
+			else
+			{
+				printf("PLUGIN: Already in RT channel.\n");
+			}
+
+			// Set player position
+
+
+
 
 		}
 	}
+}
+
+void ts3plugin_moveToRt()
+{
+	// Move user to RT channel.
+	unsigned int error = ts3Functions.getChannelIDFromChannelNames(connectionHandlerID, chname, &newcid);
+	if(error == ERROR_ok)
+		{
+			if(newcid)
+			{
+				anyID *clientList = 0;
+				ts3Functions.getChannelClientList(connectionHandlerID, newcid, &clientList);
+				ts3Functions.requestMuteClients(connectionHandlerID, clientList, 0);
+				ts3Functions.getChannelOfClient(connectionHandlerID, clientId, &oldcid);
+				ts3Functions.requestClientMove(connectionHandlerID, clientId, newcid, "1234", 0);
+				inRt = TRUE;
+			}
+			else
+			{
+				printf("PLUGIN: No RT channel found.\n");
+			}
+		}
+	else
+		{
+			printf("PLUGIN: Failed to get RT channel.\n");
+		}
+}
+
+void ts3plugin_moveFromRt()
+{
+	// Move the player from RT
+	unsigned int error = ts3Functions.requestClientMove(connectionHandlerID, clientId, oldcid, "", 0);
+	if(error == ERROR_ok)
+	{
+		printf("PLUGIN: Moved user back to old channel.\n");
+	}
+	else
+	{
+		printf("PLUGIN: Failed to move user back to old channel. Trying to move to default channel.\n");
+		// Get default server channel and move the user to the default channel.
+	}
+}
+
+void ts3plugin_setPlayerCoordinates()
+{
+
 }

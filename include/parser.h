@@ -1,10 +1,11 @@
 #ifndef PARSER_H
 #define PARSER_H
 
-#include <QRegExp>
-#include <QString>
+#include <qregexp>
+#include <qstring>
 
 #pragma pack(push, 1)
+
 struct argsComPOS
 {
   int posX;         //позиция игрока по горизонтали.
