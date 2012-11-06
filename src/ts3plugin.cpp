@@ -10,13 +10,13 @@
 #include <process.h>
 #include <queue>
 #include <string>
-#include "public_errors.h"
-#include "public_errors_rare.h"
-#include "public_definitions.h"
-#include "public_rare_definitions.h"
-#include "ts3_functions.h"
-#include "ts3plugin.h"
-#include "parser.h"
+#include "include/public_errors.h"
+#include "include/public_errors_rare.h"
+#include "include/public_definitions.h"
+#include "include/public_rare_definitions.h"
+#include "include/ts3_functions.h"
+#include "include/ts3plugin.h"
+#include "include/parser.h"
 
 static struct TS3Functions ts3Functions;
 
@@ -264,7 +264,7 @@ void ts3plugin_receiveCommand(void* pArguments)
 			else
 			{
 				printf("PLUGIN: Read failed. Error code: %d\n",GetLastError());
-			}
+      }
 		}
     }
 
@@ -378,14 +378,14 @@ void ts3plugin_moveFromRt()
 
     uint64* allChannels;
 
-    if(ts3Functions.getChannelList(serverID, &allChannels) == ERROR_ok)
+    if(ts3Functions.getChannelList(connectionHandlerID, &allChannels) == ERROR_ok)
     {
       int isDefault = 0,
           i = 0;
       for(; (allChannels[i] != NULL) && (isDefault == 0); i++)
-        if(ts3Functions.getChannelVariableAsInt(serverID, allChannels[i], CHANNEL_FLAG_DEFAULT, &isDefault) != ERROR_ok )
+        if(ts3Functions.getChannelVariableAsInt(connectionHandlerID, allChannels[i], CHANNEL_FLAG_DEFAULT, &isDefault) != ERROR_ok )
         {
-          printf("PLUGIN: Failed to check default flag of channel: %d\n");
+          printf("PLUGIN: Failed to check default flag of channel: %d\n", allChannels[i]);
         }
       if(ts3Functions.requestClientMove(connectionHandlerID, clientId, oldcid, "", 0) == ERROR_ok)
       {
@@ -396,7 +396,7 @@ void ts3plugin_moveFromRt()
         printf("PLUGIN: Failed to move user to default channel.\n");
         // ISSUE Try to disconnect in this case?
       }
-      ts3client_freeMemory(allChannels);
+      ts3Functions.freeMemory(allChannels);
     }
     else
     {
