@@ -366,17 +366,43 @@ void ts3plugin_moveToRt()
 
 void ts3plugin_moveFromRt()
 {
-	// Move the player from RT
-	unsigned int error = ts3Functions.requestClientMove(connectionHandlerID, clientId, oldcid, "", 0);
-	if(error == ERROR_ok)
-	{
-		printf("PLUGIN: Moved user back to old channel.\n");
-	}
-	else
-	{
-		printf("PLUGIN: Failed to move user back to old channel. Trying to move to default channel.\n");
-		// Get default server channel and move the user to the default channel.
-	}
+  // Move the player from RT
+  unsigned int error = ts3Functions.requestClientMove(connectionHandlerID, clientId, oldcid, "", 0);
+  if(error == ERROR_ok)
+  {
+    printf("PLUGIN: Moved user back to old channel.\n");
+  }
+  else
+  {
+    printf("PLUGIN: Failed to move user back to old channel. Trying to move to default channel.\n");
+
+    uint64* allChannels;
+
+    if(ts3Functions.getChannelList(serverID, &allChannels) == ERROR_ok)
+    {
+      int isDefault = 0,
+          i = 0;
+      for(; (allChannels[i] != NULL) && (isDefault == 0); i++)
+        if(ts3Functions.getChannelVariableAsInt(serverID, allChannels[i], CHANNEL_FLAG_DEFAULT, &isDefault) != ERROR_ok )
+        {
+          printf("PLUGIN: Failed to check default flag of channel: %d\n");
+        }
+      if(ts3Functions.requestClientMove(connectionHandlerID, clientId, oldcid, "", 0) == ERROR_ok)
+      {
+        printf("PLUGIN: Moved user to default channel.\n");
+      }
+      else
+      {
+        printf("PLUGIN: Failed to move user to default channel.\n");
+        // ISSUE Try to disconnect in this case?
+      }
+      ts3client_freeMemory(allChannels);
+    }
+    else
+    {
+      printf("PLUGIN: Failed to get channel list.\n");
+    }
+  }
 }
 
 void ts3plugin_setPlayerCoordinates()
