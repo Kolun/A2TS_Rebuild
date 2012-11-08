@@ -17,6 +17,7 @@
 #include "include/ts3_functions.h"
 #include "include/ts3plugin.h"
 #include "include/parser.h"
+using namespace std;
 
 static struct TS3Functions ts3Functions;
 
@@ -42,7 +43,7 @@ static struct TS3Functions ts3Functions;
 
 static char* pluginID = NULL;
 uint64 connectionHandlerID;
-anyID clientId;
+anyID myId;
 HANDLE clientPipe = INVALID_HANDLE_VALUE;
 HANDLE receiverThreadHndl;
 DWORD dwError = ERROR_SUCCESS;
@@ -52,9 +53,13 @@ BOOL inRt = 0;
 char *chname[] = {"PvP_WOG","RT",""};
 uint64 newcid = 0;
 uint64 oldcid = 0;
+BOOL connected = 0;
 
-std::queue<std::wstring> incomingMessages;
-std::queue<std::wstring> outgoingMessages;
+queue<wstring> incomingMessages;
+queue<wstring> outgoingMessages;
+
+void ts3plugin_moveToRt();
+void ts3plugin_moveFromRt();
 /*********************************** Required functions START ************************************/
 /*
  * If any of these required functions is not implemented, TS3 will refuse to load the plugin
@@ -97,11 +102,43 @@ int ts3plugin_init()
 	/* Plugin init code goes here */
 	printf("PLUGIN: Init\n");
 
-	if((ts3Functions.spawnNewServerConnectionHandler(0, &connectionHandlerID)) == ERROR_unable_to_bind_network_port)
+	int connectionState;
+	connectionHandlerID = ts3Functions.getCurrentServerConnectionHandlerID();
+	if(connectionHandlerID)
 	{
-		printf("PLUGIN: Failed to get connection handler ID.\n");
-		return 1;
+		ts3Functions.getConnectionStatus(connectionHandlerID, &connectionState);
+		if(connectionState == STATUS_CONNECTION_ESTABLISHED)
+		{
+			if(ts3Functions.getClientID(connectionHandlerID, &myId) != ERROR_ok)
+			{
+				printf("PLUGIN: Failed to receive client ID.\n"); 
+			}
+			else
+			{
+				printf("PLUGIN: Current client ID: %d\n", myId);
+			}
+		}
 	}
+	
+/*	if(receiverThreadHndl == NULL)
+	{
+		printf("PLUGIN: Receiver handle is unassigned. Assigning..\n");
+		receiverThreadHndl = (HANDLE)_beginthread(ts3plugin_receiveCommand, 0, NULL);
+	}
+	else
+	{
+		printf("PLUGIN: Receiver handle already assigned. \n");
+		if(GetThreadId(receiverThreadHndl) != NULL)
+		{
+			printf("PLUGIN: Thread id: %d\n", GetThreadId(receiverThreadHndl));
+		}
+		else
+		{
+			return 1;
+		}
+	}*/
+
+	printf("PLUGIN: Completed init().\n");
 
     return 0;  /* 0 = success, 1 = failure */
 }
@@ -141,51 +178,26 @@ void ts3plugin_registerPluginID(const char* id) {
 
 void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int newStatus, unsigned int errorNumber)
 {
-	printf("PLUGIN: newStatus is %d\n",newStatus);
 	if(newStatus == STATUS_CONNECTION_ESTABLISHED)
 	{
-		// Check if threads are started.
-		// If not - start.
 		printf("PLUGIN: Connected to server.\n");
 
 		// Receive client id
-		if(ts3Functions.getClientID(connectionHandlerID, &clientId) != ERROR_ok)
+		// Overwrite if already assigned.
+		if(ts3Functions.getClientID(connectionHandlerID, &myId) != ERROR_ok)
 		{
 			printf("PLUGIN: Failed to receive client ID.\n"); 
-			// FIXME <--------------- Client ID must begin from 1.
 		}
 		else
 		{
-			printf("PLUGIN: Current client ID: %d\n", clientId);
+			printf("PLUGIN: Current client ID: %d\n", myId);
 		}
-
-		if(receiverThreadHndl == NULL)
-		{
-			printf("PLUGIN: Receiver handle is unassigned. Assigning..\n");
-			receiverThreadHndl = (HANDLE)_beginthread(ts3plugin_receiveCommand, 0, NULL);
-		}
-		else
-		{
-			printf("PLUGIN: Receiver handle already assigned. \n");
-			if(GetThreadId(receiverThreadHndl) != NULL)
-			{
-				printf("PLUGIN: Thread id: %d\n", GetThreadId(receiverThreadHndl));
-			}
-		}
-		
-/*		if(senderThreadHndl == NULL)
-		{
-			printf("PLUGIN: Sender handle is unassigned. Assigning..\n");
-			senderThreadHndl = (HANDLE)_beginthread(ts3plugin_sendCommand, 0 , NULL);
-		}
-		else
-		{
-			printf("PLUGIN: Sender handle already assigned. \n");
-			if(GetThreadId(senderThreadHndl) != NULL)
-			{
-				printf("PLUGIN: Thread id: %d\n", GetThreadId(senderThreadHndl));
-			}
-		}*/
+		connected = TRUE;
+	}
+	else
+	{
+		printf("PLUGIN: Disconnected from server.\n");
+		connected = FALSE;
 	}
 }
 
@@ -193,7 +205,7 @@ void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int 
 void ts3plugin_pipeConnect()
 {
 	// Try to open the named pipe identified by the pipe name.
-	while (stopRequested != true) 
+	while (stopRequested != TRUE) 
     {
         clientPipe = CreateFile( 
             FULL_PIPE_NAME,                 // Pipe name 
@@ -235,7 +247,7 @@ void ts3plugin_receiveCommand(void* pArguments)
     cbResponse = sizeof(chResponse) -1;
 	int errCode;
 
-	while(stopRequested != true)
+	while(stopRequested != TRUE)
 	{
         fFinishRead = ReadFile(
             clientPipe,             // Handle of the pipe
@@ -280,7 +292,7 @@ void ts3plugin_sendCommand(void* pArguments) // FIXME Currently disabled.
 
 	printf("PLUGIN: Connected to a server pipe.\n");
 
-	while(stopRequested != true)
+	while(stopRequested != TRUE)
 	{
 		if(!outgoingMessages.empty())
 		{
@@ -310,19 +322,20 @@ void ts3plugin_sendCommand(void* pArguments) // FIXME Currently disabled.
 }
 
 // Main loop implementation
-void ts3plugin_pos()
+void ts3plugin_mainLoop()
 {
-	while(stopRequested != true)
+	while(stopRequested != TRUE && connected == TRUE)
 	{
 		if(incomingMessages.size() != 0)
 		{
 			// Check if there are incoming messages in the queue.
 			// If they are - parse them.
 			// FIXME Add code which would get the arguments from the parser.
+			printf("PLUGIN: mainLoopExec.\n");
 
-			if(inRt == 0)
+			if(inRt == FALSE)
 			{
-				
+				ts3plugin_moveToRt();
 			}
 			else
 			{
@@ -330,9 +343,6 @@ void ts3plugin_pos()
 			}
 
 			// Set player position
-
-
-
 
 		}
 	}
@@ -349,8 +359,8 @@ void ts3plugin_moveToRt()
 				anyID *clientList = 0;
 				ts3Functions.getChannelClientList(connectionHandlerID, newcid, &clientList);
 				ts3Functions.requestMuteClients(connectionHandlerID, clientList, 0);
-				ts3Functions.getChannelOfClient(connectionHandlerID, clientId, &oldcid);
-				ts3Functions.requestClientMove(connectionHandlerID, clientId, newcid, "1234", 0);
+				ts3Functions.getChannelOfClient(connectionHandlerID, myId, &oldcid);
+				ts3Functions.requestClientMove(connectionHandlerID, myId, newcid, "1234", 0);
 				inRt = TRUE;
 			}
 			else
@@ -366,46 +376,110 @@ void ts3plugin_moveToRt()
 
 void ts3plugin_moveFromRt()
 {
-  // Move the player from RT
-  unsigned int error = ts3Functions.requestClientMove(connectionHandlerID, clientId, oldcid, "", 0);
-  if(error == ERROR_ok)
-  {
-    printf("PLUGIN: Moved user back to old channel.\n");
-  }
-  else
-  {
-    printf("PLUGIN: Failed to move user back to old channel. Trying to move to default channel.\n");
+	if(inRt = TRUE)
+	{
+		// Move the player from RT
+		unsigned int error = ts3Functions.requestClientMove(connectionHandlerID, myId, oldcid, "", 0);
+		if(error == ERROR_ok)
+		{
+			printf("PLUGIN: Moved user back to old channel.\n");
+			inRt = FALSE;
+		}
+		else
+		{
+			printf("PLUGIN: Failed to move user back to old channel. Trying to move to default channel.\n");
 
-    uint64* allChannels;
+			uint64* allChannels;
 
-    if(ts3Functions.getChannelList(connectionHandlerID, &allChannels) == ERROR_ok)
-    {
-      int isDefault = 0,
-          i = 0;
-      for(; (allChannels[i] != NULL) && (isDefault == 0); i++)
-        if(ts3Functions.getChannelVariableAsInt(connectionHandlerID, allChannels[i], CHANNEL_FLAG_DEFAULT, &isDefault) != ERROR_ok )
-        {
-          printf("PLUGIN: Failed to check default flag of channel: %d\n", allChannels[i]);
-        }
-      if(ts3Functions.requestClientMove(connectionHandlerID, clientId, oldcid, "", 0) == ERROR_ok)
-      {
-        printf("PLUGIN: Moved user to default channel.\n");
-      }
-      else
-      {
-        printf("PLUGIN: Failed to move user to default channel.\n");
-        // ISSUE Try to disconnect in this case?
-      }
-      ts3Functions.freeMemory(allChannels);
-    }
-    else
-    {
-      printf("PLUGIN: Failed to get channel list.\n");
-    }
-  }
+			if(ts3Functions.getChannelList(connectionHandlerID, &allChannels) == ERROR_ok)
+			{
+				int isDefault = 0,
+				i = 0;
+				for(; (allChannels[i] != NULL) && (isDefault == 0); i++)
+				if(ts3Functions.getChannelVariableAsInt(connectionHandlerID, allChannels[i], CHANNEL_FLAG_DEFAULT, &isDefault) != ERROR_ok )
+				{
+					printf("PLUGIN: Failed to check default flag of channel: %d\n", allChannels[i]);
+				}
+				if(ts3Functions.requestClientMove(connectionHandlerID, myId, oldcid, "", 0) == ERROR_ok)
+				{
+					printf("PLUGIN: Moved user to default channel.\n");
+					inRt = FALSE;
+				}
+				else
+				{
+					printf("PLUGIN: Failed to move user to default channel.\n");
+					// ISSUE Try to disconnect in this case?
+				}
+				ts3Functions.freeMemory(allChannels);
+			}
+			else
+			{
+				printf("PLUGIN: Failed to get channel list.\n");
+			}
+		}
+	}
+	else
+		printf("PLUGIN: Client already not in RT.\n");
 }
 
-void ts3plugin_setPlayerCoordinates()
+void ts3plugin_onPluginCommandEvent(uint64 serverConnectionHandlerID, const char* , const char* pluginCommand)
 {
+	// Receive coordinates from other players.
+	if(serverConnectionHandlerID != connectionHandlerID)
+	{
+		printf("PLUGIN: onUpdateClientEvent failure.\n");
+		return;
+	}
 
+	char* commandText = strcpy(commandText, pluginCommand);
+	char* containedID = strtok(commandText, "@");
+
+	anyID clientId = (anyID)containedID;
+
+	if(clientId != myId)
+	{
+		//ts3plugin_parseCommandText();
+	}
+}
+
+void ts3plugin_parseCommandText()
+{
+	// Parse the command from other clients call some other function that would do something else
+	// For example position other clients, determine if they are talking (or not)
+}
+
+void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int status, int, anyID clientID)
+{
+	if(status == STATUS_TALKING)
+	{
+		// Code describing what happens when any of the clients start talking
+		if(clientID == myId)
+		{
+			printf("PLUGIN: I am talking.\n");
+			// We are the ones talking.
+			// Inform everyone else of our current coordinates and stuff.
+			//ts3Functions.sendPluginCommand(connectionHandlerID, pluginID, "insert_command_text_here", PluginCommandTarget_CURRENT_CHANNEL,NULL,0);
+		}
+		else
+		{
+			printf("PLUGIN: Someone else talking.\n");
+			// Someone else starts talking.
+		}
+	}
+	else
+	{
+		// And what happens when he stops.
+		if(clientID == myId)
+		{
+			// We were the ones talking.
+			//ts3Functions.sendPluginCommand(connectionHandlerID, pluginID, "insert_command_text_here", PluginCommandTarget_CURRENT_CHANNEL,NULL,0);
+
+			printf("PLUGIN: I stopped talking.\n");
+		}
+		else
+		{
+			// Someone else stopped talking.
+			printf("PLUGIN: Someone else stopped talking.\n");
+		}
+	}
 }
