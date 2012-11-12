@@ -483,3 +483,21 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
 		}
 	}
 }
+
+void ts3plugin_onClientMoveEvent(uint64 serverConnectionHandlerID, anyID clientID, uint64 oldChannelID, uint64 newChannelID, int visibility, const char* moveMessage)
+{
+	char* result;
+	if(ts3Functions.getChannelVariableAsString(connectionHandlerID, newChannelID, CHANNEL_NAME, &result) == ERROR_ok)
+	{
+		if(result != "RT")
+		{
+			printf("PLUGIN: Switched to a non-RT channel.\n");
+			inRt = FALSE;
+		}
+		else
+		{
+			printf("PLUGIN: Switched to RT channel.\n");
+			inRt = TRUE;
+		}
+	}
+}
