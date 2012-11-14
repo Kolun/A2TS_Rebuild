@@ -60,6 +60,7 @@ queue<wstring> outgoingMessages;
 
 void ts3plugin_moveToRt();
 void ts3plugin_moveFromRt();
+void ts3plugin_parseCommandText();
 /*********************************** Required functions START ************************************/
 /*
  * If any of these required functions is not implemented, TS3 will refuse to load the plugin
@@ -321,33 +322,6 @@ void ts3plugin_sendCommand(void* pArguments) // FIXME Currently disabled.
 	senderThreadHndl = INVALID_HANDLE_VALUE;
 }
 
-// Main loop implementation
-void ts3plugin_mainLoop()
-{
-	while(stopRequested != TRUE && connected == TRUE)
-	{
-		if(incomingMessages.size() != 0)
-		{
-			// Check if there are incoming messages in the queue.
-			// If they are - parse them.
-			// FIXME Add code which would get the arguments from the parser.
-			printf("PLUGIN: mainLoopExec.\n");
-
-			if(inRt == FALSE)
-			{
-				ts3plugin_moveToRt();
-			}
-			else
-			{
-				printf("PLUGIN: Already in RT channel.\n");
-			}
-
-			// Set player position
-
-		}
-	}
-}
-
 void ts3plugin_moveToRt()
 {
 	// Move user to RT channel.
@@ -446,6 +420,8 @@ void ts3plugin_parseCommandText()
 {
 	// Parse the command from other clients call some other function that would do something else
 	// For example position other clients, determine if they are talking (or not)
+	// Command to be should contain the following: 
+	
 }
 
 void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int status, int, anyID clientID)
@@ -500,4 +476,5 @@ void ts3plugin_onClientMoveEvent(uint64 serverConnectionHandlerID, anyID clientI
 			inRt = TRUE;
 		}
 	}
+	ts3Functions.freeMemory(result);
 }
