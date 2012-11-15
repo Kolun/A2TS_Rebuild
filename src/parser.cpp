@@ -1,4 +1,4 @@
-﻿#include <src/parser.h>
+﻿#include "include/parser.h"
 
 int commandCheck( std::wstring messageWS )
 {
