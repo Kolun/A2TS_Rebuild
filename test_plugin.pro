@@ -2,7 +2,8 @@ TEMPLATE = lib
 TARGET = ts3plugin
 
 HEADERS += \
-    src/ts3plugin.h \
+    include/ts3plugin.h \
+	include/parser.h \
     include/ts3_functions.h \
     include/public_rare_definitions.h \
     include/public_errors_rare.h \
@@ -10,9 +11,7 @@ HEADERS += \
     include/public_definitions.h \
     include/plugin_events.h \
     include/plugin_definitions.h \
-    include/clientlib_publicdefinitions.h \
-    parser.h \
-    src/parser.h
+    include/clientlib_publicdefinitions.h
 
 SOURCES += \
     src/ts3plugin.cpp \
